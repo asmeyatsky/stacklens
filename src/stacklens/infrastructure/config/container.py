@@ -9,6 +9,7 @@ from stacklens.infrastructure.analysers.dns_analyser import DnsAnalyser
 from stacklens.infrastructure.analysers.frontend_analyser import FrontendAnalyser
 from stacklens.infrastructure.analysers.headers_analyser import HeadersAnalyser
 from stacklens.infrastructure.analysers.tls_analyser import TlsAnalyser
+from stacklens.infrastructure.writers.html_writer import HtmlReportWriter
 from stacklens.infrastructure.writers.json_writer import JsonReportWriter
 
 
@@ -23,6 +24,7 @@ class Container:
         self.frontend_analyser = FrontendAnalyser(self.http_client)
         self.backend_analyser = BackendAnalyser(self.http_client)
         self.json_writer = JsonReportWriter()
+        self.html_writer = HtmlReportWriter()
         self.ethics = EthicsPolicy(self.http_client)
 
         self._all_analysers = {
@@ -47,7 +49,7 @@ class Container:
     def run_analysis_command(self, layers: list[str]) -> RunAnalysisCommand:
         return RunAnalysisCommand(
             pipeline=self.pipeline(layers),
-            writers={"json": self.json_writer},
+            writers={"json": self.json_writer, "html": self.html_writer},
             ethics=self.ethics,
         )
 

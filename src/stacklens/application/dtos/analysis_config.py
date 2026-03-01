@@ -12,3 +12,4 @@ class AnalysisConfig:
     output_dir: Path = field(default_factory=lambda: Path("stacklens_output"))
     no_ai: bool = True
     ethical_strict: bool = False
+    perf: bool = False

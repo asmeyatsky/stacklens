@@ -19,7 +19,7 @@ dependencies = [
 browser = ["playwright>=1.40"]
 
 [project.scripts]
-stacklens = "stacklens.presentation.cli.commands.analyze:app"
+stacklens = "stacklens.presentation.cli.app:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/stacklens"]

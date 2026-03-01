@@ -45,16 +45,31 @@ def analyze(
         "--ethical-strict",
         help="Abort if robots.txt disallows scanning",
     ),
+    html: bool = typer.Option(
+        False,
+        "--html",
+        help="Also generate an HTML report alongside JSON",
+    ),
+    perf: bool = typer.Option(
+        False,
+        "--perf",
+        help="Enable performance scoring (includes browser analysis)",
+    ),
 ) -> None:
     """Analyse a public-facing URL across DNS, TLS, HTTP headers, frontend, and backend layers."""
-    selected_layers = _parse_layers(layers, deep=deep)
+    selected_layers = _parse_layers(layers, deep=deep, perf=perf)
+    output_formats = ["json"]
+    if html:
+        output_formats.append("html")
 
     config = AnalysisConfig(
         target_url=url,
         layers=selected_layers,
+        output_formats=output_formats,
         output_dir=output_dir,
         no_ai=no_ai,
         ethical_strict=ethical_strict,
+        perf=perf,
     )
 
     asyncio.run(_run(config))
@@ -69,6 +84,10 @@ async def _run(config: AnalysisConfig) -> None:
             report = await command.execute(config)
 
         _print_summary(report)
+
+        if report.performance_score:
+            _print_performance(report.performance_score)
+
         console.print(
             f"\n[green]Report saved to {config.output_dir}/[/green]"
         )
@@ -102,6 +121,13 @@ def _print_summary(report) -> None:  # noqa: ANN001
             )
         if report.summary.maturity_rating != "unknown":
             summary_lines.append(f"[bold]Maturity:[/bold] {report.summary.maturity_rating}")
+        if report.performance_score:
+            ps = report.performance_score
+            grade_colors = {"A": "green", "B": "green", "C": "yellow", "D": "red", "F": "red"}
+            gc = grade_colors.get(ps.grade, "white")
+            summary_lines.append(
+                f"[bold]Performance:[/bold] [{gc}]{ps.overall_score}/100 ({ps.grade})[/{gc}]"
+            )
         if report.summary.key_findings:
             summary_lines.append("")
             for finding in report.summary.key_findings:
@@ -138,6 +164,54 @@ def _print_summary(report) -> None:  # noqa: ANN001
     # Consolidated integrations table
     if report.summary and report.summary.integrations:
         _print_integrations(report.summary.integrations)
+
+
+def _print_performance(score) -> None:  # noqa: ANN001
+    grade_colors = {"A": "green", "B": "green", "C": "yellow", "D": "red", "F": "red"}
+    gc = grade_colors.get(score.grade, "white")
+
+    table = Table(title="PERFORMANCE", show_header=True)
+    table.add_column("Metric")
+    table.add_column("Value")
+    table.add_column("Score")
+    table.add_column("Rating")
+
+    table.add_row(
+        "[bold]Overall[/bold]",
+        "",
+        f"[{gc}]{score.overall_score}/100[/{gc}]",
+        f"[{gc}]{score.grade}[/{gc}]",
+    )
+
+    for m in score.metrics:
+        if m.rating == "unknown":
+            continue
+        rating_colors = {"good": "green", "needs-improvement": "yellow", "poor": "red"}
+        rc = rating_colors.get(m.rating, "white")
+        table.add_row(m.name, m.display, str(m.score), f"[{rc}]{m.rating}[/{rc}]")
+
+    console.print(table)
+
+    # Resource breakdown
+    if score.resource_breakdown:
+        rtbl = Table(title="Resource Breakdown", show_header=True)
+        rtbl.add_column("Type")
+        rtbl.add_column("Size")
+        for rtype, rbytes in sorted(score.resource_breakdown.items(), key=lambda x: -x[1]):
+            rtbl.add_row(rtype, _format_bytes(rbytes))
+        console.print(rtbl)
+
+    # Network stats
+    stats: list[str] = []
+    stats.append(f"Requests: {score.total_requests}")
+    if score.third_party_ratio > 0:
+        stats.append(f"3rd party: {score.third_party_ratio:.0%}")
+    if score.total_transfer_bytes:
+        stats.append(f"Transfer: {_format_bytes(score.total_transfer_bytes)}")
+    if score.render_blocking_count:
+        stats.append(f"Render-blocking: {score.render_blocking_count}")
+    if stats:
+        console.print(f"  {' · '.join(stats)}")
 
 
 def _print_dns(result) -> None:  # noqa: ANN001
@@ -302,7 +376,7 @@ def _print_integrations(integrations: list[str]) -> None:
     console.print(table)
 
 
-def _parse_layers(layers_str: str | None, *, deep: bool = False) -> list[str]:
+def _parse_layers(layers_str: str | None, *, deep: bool = False, perf: bool = False) -> list[str]:
     if not layers_str:
         selected = list(DEFAULT_LAYERS)
     else:
@@ -312,7 +386,7 @@ def _parse_layers(layers_str: str | None, *, deep: bool = False) -> list[str]:
             raise typer.BadParameter(
                 f"Invalid layers: {', '.join(invalid)}. Valid: {', '.join(VALID_LAYERS)}"
             )
-    if deep and "browser" not in selected:
+    if (deep or perf) and "browser" not in selected:
         selected.append("browser")
     return selected
 

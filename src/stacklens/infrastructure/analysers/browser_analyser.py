@@ -246,15 +246,68 @@ class BrowserAnalyser:
                     + (performance.getEntriesByType('navigation')[0]?.transferSize || 0);
             }""")
 
+            # TBT — sum of (duration - 50ms) for each long task
+            try:
+                tbt_val = await page.evaluate("""() => {
+                    return new Promise(resolve => {
+                        let tbt = 0;
+                        const observer = new PerformanceObserver(list => {
+                            for (const entry of list.getEntries()) {
+                                tbt += Math.max(0, entry.duration - 50);
+                            }
+                        });
+                        try {
+                            observer.observe({type: 'longtask', buffered: true});
+                        } catch(e) {}
+                        setTimeout(() => { observer.disconnect(); resolve(tbt); }, 100);
+                    });
+                }""")
+                tbt_ms = float(tbt_val) if isinstance(tbt_val, (int, float)) else None
+            except Exception:
+                tbt_ms = None
+
+            # Resource breakdown — bytes by initiatorType
+            try:
+                resource_breakdown = await page.evaluate("""() => {
+                    const entries = performance.getEntriesByType('resource');
+                    const breakdown = {};
+                    for (const e of entries) {
+                        const t = e.initiatorType || 'other';
+                        breakdown[t] = (breakdown[t] || 0) + (e.transferSize || 0);
+                    }
+                    return breakdown;
+                }""")
+                if not isinstance(resource_breakdown, dict):
+                    resource_breakdown = {}
+            except Exception:
+                resource_breakdown = {}
+
+            # Render-blocking count
+            try:
+                render_blocking_count = await page.evaluate("""() => {
+                    const entries = performance.getEntriesByType('resource');
+                    let count = 0;
+                    for (const e of entries) {
+                        if (e.renderBlockingStatus === 'blocking') count++;
+                    }
+                    return count;
+                }""")
+                render_blocking_count = int(render_blocking_count) if isinstance(render_blocking_count, (int, float)) else 0
+            except Exception:
+                render_blocking_count = 0
+
             return PerformanceMetrics(
                 ttfb_ms=nav_timing.get("ttfb"),
                 fcp_ms=fcp * 1000 if fcp and fcp > 0 else None,
                 lcp_ms=lcp * 1000 if lcp and lcp > 0 else None,
                 cls=cls_val if isinstance(cls_val, (int, float)) else None,
+                tbt_ms=tbt_ms,
                 dom_interactive_ms=nav_timing.get("domInteractive"),
                 dom_complete_ms=nav_timing.get("domComplete"),
                 load_event_ms=nav_timing.get("loadEvent"),
                 total_page_weight_bytes=int(total_weight) if total_weight else 0,
+                render_blocking_count=render_blocking_count,
+                resource_breakdown=resource_breakdown,
             )
         except Exception:
             return PerformanceMetrics()

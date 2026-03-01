@@ -48,10 +48,13 @@ class PerformanceMetrics(BaseModel, frozen=True):
     fcp_ms: float | None = None
     lcp_ms: float | None = None
     cls: float | None = None
+    tbt_ms: float | None = None
     dom_interactive_ms: float | None = None
     dom_complete_ms: float | None = None
     load_event_ms: float | None = None
     total_page_weight_bytes: int = 0
+    render_blocking_count: int = 0
+    resource_breakdown: dict[str, int] = {}
 
 
 class CookieInfo(BaseModel, frozen=True):
