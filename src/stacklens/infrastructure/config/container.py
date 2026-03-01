@@ -33,6 +33,13 @@ class Container:
             "backend": self.backend_analyser,
         }
 
+        try:
+            from stacklens.infrastructure.analysers.browser_analyser import BrowserAnalyser
+            self.browser_analyser = BrowserAnalyser()
+            self._all_analysers["browser"] = self.browser_analyser
+        except ImportError:
+            self.browser_analyser = None
+
     def pipeline(self, layers: list[str]) -> AnalysisPipeline:
         selected = [self._all_analysers[l] for l in layers if l in self._all_analysers]
         return AnalysisPipeline(selected)

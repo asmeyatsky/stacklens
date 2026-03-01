@@ -48,11 +48,13 @@ class AnalysisPipeline:
             return {"error": f"Unknown analyser: {name}"}
         async with self._semaphore:
             try:
+                timeout = getattr(analyser, "timeout", self._timeout)
                 return await asyncio.wait_for(
-                    analyser.analyse(target), timeout=self._timeout
+                    analyser.analyse(target), timeout=timeout
                 )
             except asyncio.TimeoutError:
-                return {"error": f"Analyser '{name}' timed out after {self._timeout}s"}
+                timeout = getattr(analyser, "timeout", self._timeout)
+                return {"error": f"Analyser '{name}' timed out after {timeout}s"}
             except Exception as exc:
                 return {"error": f"Analyser '{name}' failed: {exc}"}
 

@@ -2,6 +2,16 @@
 
 from stacklens.application.services.summary_builder import build_summary
 from stacklens.domain.models.backend import BackendResult
+from stacklens.domain.models.browser import (
+    BrowserResult,
+    ConsoleSnapshot,
+    DomSnapshot,
+    FrameworkData,
+    GraphQLQuery,
+    NetworkSummary,
+    PerformanceMetrics,
+    WebSocketConnection,
+)
 from stacklens.domain.models.dns import DnsResult
 from stacklens.domain.models.frontend import FrontendResult, TechDetection
 from stacklens.domain.models.headers import HeadersResult, SecurityHeader
@@ -252,3 +262,150 @@ def test_maturity_startup():
     report = _make_report()
     summary = build_summary(report)
     assert summary.maturity_rating == "startup"
+
+
+# ── Browser enrichment tests ────────────────────────────────────────
+
+
+def test_tech_stack_from_browser_frameworks():
+    browser = BrowserResult(
+        framework_data=FrameworkData(
+            next_data=True,
+            global_objects=["React", "Stripe"],
+        ),
+    )
+    report = _make_report(browser=browser)
+    summary = build_summary(report)
+
+    assert "Next.js" in summary.tech_stack
+    assert "React" in summary.tech_stack
+    assert "Stripe" in summary.tech_stack
+
+
+def test_integrations_from_browser_third_party_domains():
+    browser = BrowserResult(
+        network=NetworkSummary(
+            third_party_domains=["js.stripe.com", "sentry.io", "fonts.googleapis.com"],
+        ),
+    )
+    report = _make_report(browser=browser)
+    summary = build_summary(report)
+
+    assert "Stripe" in summary.integrations
+    assert "Sentry" in summary.integrations
+    assert "Google Fonts" in summary.integrations
+
+
+def test_api_stack_from_browser_graphql_and_ws():
+    browser = BrowserResult(
+        network=NetworkSummary(
+            graphql_queries=[GraphQLQuery(endpoint="/graphql")],
+            streaming_endpoints=["https://example.com/events"],
+        ),
+        websockets=[WebSocketConnection(url="wss://example.com/ws")],
+    )
+    report = _make_report(browser=browser)
+    summary = build_summary(report)
+
+    assert "GraphQL" in summary.api_stack
+    assert "SSE" in summary.api_stack
+    assert "WebSocket" in summary.api_stack
+
+
+def test_key_findings_browser_poor_lcp():
+    browser = BrowserResult(
+        performance=PerformanceMetrics(lcp_ms=5000.0),
+    )
+    report = _make_report(browser=browser)
+    summary = build_summary(report)
+
+    assert any("Poor LCP" in f for f in summary.key_findings)
+
+
+def test_key_findings_browser_high_cls():
+    browser = BrowserResult(
+        performance=PerformanceMetrics(cls=0.5),
+    )
+    report = _make_report(browser=browser)
+    summary = build_summary(report)
+
+    assert any("High CLS" in f for f in summary.key_findings)
+
+
+def test_key_findings_browser_console_errors():
+    browser = BrowserResult(
+        console=ConsoleSnapshot(error_count=5),
+    )
+    report = _make_report(browser=browser)
+    summary = build_summary(report)
+
+    assert any("Console errors: 5" in f for f in summary.key_findings)
+
+
+def test_key_findings_browser_graphql_ops():
+    browser = BrowserResult(
+        network=NetworkSummary(
+            graphql_queries=[
+                GraphQLQuery(endpoint="/graphql", operation_name="GetUser"),
+                GraphQLQuery(endpoint="/graphql", operation_name="GetPosts"),
+            ],
+        ),
+    )
+    report = _make_report(browser=browser)
+    summary = build_summary(report)
+
+    assert any("GraphQL: 2 operation(s)" in f for f in summary.key_findings)
+
+
+def test_key_findings_browser_heavy_page():
+    browser = BrowserResult(
+        performance=PerformanceMetrics(total_page_weight_bytes=6 * 1024 * 1024),
+    )
+    report = _make_report(browser=browser)
+    summary = build_summary(report)
+
+    assert any("Heavy page" in f for f in summary.key_findings)
+
+
+def test_key_findings_browser_websockets():
+    browser = BrowserResult(
+        websockets=[
+            WebSocketConnection(url="wss://example.com/ws1"),
+            WebSocketConnection(url="wss://example.com/ws2"),
+        ],
+    )
+    report = _make_report(browser=browser)
+    summary = build_summary(report)
+
+    assert any("WebSocket connections: 2" in f for f in summary.key_findings)
+
+
+def test_maturity_browser_signals():
+    browser = BrowserResult(
+        framework_data=FrameworkData(service_worker_active=True),
+        performance=PerformanceMetrics(lcp_ms=2000.0),
+        network=NetworkSummary(
+            graphql_queries=[GraphQLQuery(endpoint="/graphql")],
+        ),
+    )
+    report = _make_report(browser=browser)
+    summary = build_summary(report)
+
+    # 3 growth signals from browser: service_worker, good LCP, graphql
+    assert summary.maturity_rating == "growth"
+
+
+def test_maturity_browser_shadow_dom_enterprise():
+    backend = BackendResult(
+        tracing=["Zipkin"],
+        architecture=["Microservices (service mesh)"],
+        waf=["Cloudflare"],
+    )
+    browser = BrowserResult(
+        dom=DomSnapshot(has_shadow_dom=True),
+    )
+    report = _make_report(backend=backend, browser=browser)
+    summary = build_summary(report)
+
+    # 3 enterprise from backend + 1 from shadow_dom = 4 enterprise signals
+    assert summary.maturity_rating == "enterprise"

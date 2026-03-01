@@ -15,6 +15,9 @@ dependencies = [
     "dnspython>=2.5",
 ]
 
+[project.optional-dependencies]
+browser = ["playwright>=1.40"]
+
 [project.scripts]
 stacklens = "stacklens.presentation.cli.commands.analyze:app"
 
@@ -24,10 +27,14 @@ packages = ["src/stacklens"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (requires playwright)",
+]
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "respx>=0.21",
+    "playwright>=1.40",
 ]
