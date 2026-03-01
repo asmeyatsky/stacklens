@@ -4,6 +4,7 @@ from pathlib import Path
 
 from stacklens.application.dtos.analysis_config import AnalysisConfig
 from stacklens.application.orchestration.pipeline import AnalysisPipeline
+from stacklens.application.services.summary_builder import build_summary
 from stacklens.domain.models.report import AnalysisReport
 from stacklens.domain.models.target import AnalysisTarget
 from stacklens.domain.ports.report_writer import ReportWriterPort
@@ -32,6 +33,10 @@ class RunAnalysisCommand:
         )
 
         report = await self._pipeline.run(target, config.layers)
+
+        # Build cross-layer summary
+        summary = build_summary(report)
+        report = report.with_summary(summary)
 
         config.output_dir.mkdir(parents=True, exist_ok=True)
         for fmt in config.output_formats:

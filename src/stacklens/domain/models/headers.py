@@ -23,3 +23,6 @@ class HeadersResult(BaseModel, frozen=True):
     security_headers: list[SecurityHeader] = Field(default_factory=list)
     cookies: list[CookieAnalysis] = Field(default_factory=list)
     score: float = 0.0
+    cors: dict[str, str] = Field(default_factory=dict)
+    caching: dict[str, str] = Field(default_factory=dict)
+    cookie_insights: list[str] = Field(default_factory=list)

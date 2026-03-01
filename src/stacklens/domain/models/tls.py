@@ -20,3 +20,7 @@ class TlsResult(BaseModel, frozen=True):
     certificate: TlsCertificate | None = None
     days_until_expiry: int | None = None
     hsts: bool = False
+    cipher_strength: str = "unknown"
+    is_wildcard: bool = False
+    is_ev: bool = False
+    key_type: str | None = None

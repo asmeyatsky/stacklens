@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from stacklens.domain.models.headers import CookieAnalysis, HeadersResult, SecurityHeader
 from stacklens.domain.models.target import AnalysisTarget
 from stacklens.domain.ports.http_client import HttpClientPort
@@ -12,6 +14,34 @@ SECURITY_HEADERS = [
     ("x-frame-options", "X-Frame-Options"),
     ("referrer-policy", "Referrer-Policy"),
     ("permissions-policy", "Permissions-Policy"),
+    ("cross-origin-embedder-policy", "Cross-Origin-Embedder-Policy"),
+    ("cross-origin-opener-policy", "Cross-Origin-Opener-Policy"),
+    ("cross-origin-resource-policy", "Cross-Origin-Resource-Policy"),
+]
+
+# ── Cookie → insight mapping ─────────────────────────────────────────
+_COOKIE_TRACKING: list[tuple[str, str]] = [
+    ("_ga", "Google Analytics"),
+    ("_gid", "Google Analytics"),
+    ("_fbp", "Facebook Pixel"),
+    ("_fbc", "Facebook Pixel"),
+    ("__stripe_mid", "Stripe"),
+    ("ajs_", "Segment"),
+    ("_hjid", "Hotjar"),
+    ("hubspotutk", "HubSpot"),
+    ("amplitude_id", "Amplitude"),
+    ("mp_", "Mixpanel"),
+    ("optimizelyEndUserId", "Optimizely"),
+]
+
+_SESSION_TYPES: list[tuple[str, str]] = [
+    ("connect.sid", "Node.js session"),
+    ("PHPSESSID", "PHP session"),
+    ("JSESSIONID", "Java session"),
+    ("ASP.NET_SessionId", "ASP.NET session"),
+    ("laravel_session", "Laravel session"),
+    ("rack.session", "Ruby session"),
+    ("csrftoken", "Django CSRF"),
 ]
 
 
@@ -34,6 +64,9 @@ class HeadersAnalyser:
         security = self._check_security_headers(headers_lower)
         cookies = self._parse_cookies(headers_lower)
         score = score_security_headers(security)
+        cors = self._parse_cors(headers_lower)
+        caching = self._parse_caching(headers_lower)
+        cookie_insights = self._analyze_cookie_insights(headers_lower.get("set-cookie", ""))
 
         return HeadersResult(
             server=headers_lower.get("server"),
@@ -41,6 +74,9 @@ class HeadersAnalyser:
             security_headers=security,
             cookies=cookies,
             score=score,
+            cors=cors,
+            caching=caching,
+            cookie_insights=cookie_insights,
         )
 
     @staticmethod
@@ -88,6 +124,61 @@ class HeadersAnalyser:
                 )
             )
         return cookies
+
+    @staticmethod
+    def _parse_cors(headers: dict[str, str]) -> dict[str, str]:
+        cors: dict[str, str] = {}
+        cors_headers = [
+            "access-control-allow-origin",
+            "access-control-allow-methods",
+            "access-control-allow-headers",
+            "access-control-allow-credentials",
+            "access-control-max-age",
+            "access-control-expose-headers",
+        ]
+        for key in cors_headers:
+            value = headers.get(key)
+            if value:
+                display = key.replace("access-control-", "").replace("-", "_")
+                cors[display] = value
+        return cors
+
+    @staticmethod
+    def _parse_caching(headers: dict[str, str]) -> dict[str, str]:
+        caching: dict[str, str] = {}
+        for key in ("cache-control", "etag", "age", "vary", "surrogate-control"):
+            value = headers.get(key)
+            if value:
+                caching[key] = value
+        return caching
+
+    @staticmethod
+    def _analyze_cookie_insights(cookies_raw: str) -> list[str]:
+        if not cookies_raw:
+            return []
+        insights: list[str] = []
+        cookies_lower = cookies_raw.lower()
+
+        # Tracking cookies
+        for prefix, service in _COOKIE_TRACKING:
+            if prefix.lower() in cookies_lower and service not in insights:
+                insights.append(f"Tracking: {service}")
+
+        # Session type
+        for prefix, session_type in _SESSION_TYPES:
+            if prefix.lower() in cookies_lower and session_type not in insights:
+                insights.append(f"Session: {session_type}")
+
+        # Check for extreme durations
+        max_age_matches = re.findall(r'max-age=(\d+)', cookies_lower)
+        for age_str in max_age_matches:
+            age = int(age_str)
+            if age > 365 * 24 * 3600:
+                years = age // (365 * 24 * 3600)
+                insights.append(f"Long-lived cookie ({years}+ years)")
+                break
+
+        return insights
 
 
 def _extract_samesite(flags: str) -> str | None:

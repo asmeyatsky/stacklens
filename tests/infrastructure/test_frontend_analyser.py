@@ -15,6 +15,9 @@ class FakeHttpClient:
     async def head(self, url, *, follow_redirects=True):
         return self._response
 
+    async def options(self, url, *, follow_redirects=True):
+        return self._response
+
     async def close(self):
         pass
 
@@ -147,3 +150,308 @@ async def test_empty_html_returns_defaults():
     assert result.detections == []
     assert result.meta_generator is None
     assert result.rendering == "unknown"
+    assert result.script_dependencies == []
+    assert result.structured_data_types == []
+    assert result.preconnect_domains == []
+
+
+@pytest.mark.asyncio
+async def test_detects_jquery():
+    html = '<html><body><script src="https://code.jquery.com/jquery-3.7.1.min.js"></script></body></html>'
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    names = {d.name for d in result.detections}
+    assert "jQuery" in names
+
+
+@pytest.mark.asyncio
+async def test_detects_htmx():
+    html = '<html><body><button hx-get="/api/data" hx-trigger="click">Load</button></body></html>'
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    names = {d.name for d in result.detections}
+    assert "HTMX" in names
+
+
+@pytest.mark.asyncio
+async def test_detects_stripe():
+    html = '<html><body><script src="https://js.stripe.com/v3/"></script><p>Checkout page with payment form</p></body></html>'
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    names = {d.name for d in result.detections}
+    assert "Stripe" in names
+
+
+@pytest.mark.asyncio
+async def test_detects_sentry():
+    html = '<html><body><script src="https://browser.sentry-cdn.com/7.0.0/bundle.min.js"></script><p>App content</p></body></html>'
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    names = {d.name for d in result.detections}
+    assert "Sentry" in names
+
+
+@pytest.mark.asyncio
+async def test_detects_pwa_manifest():
+    html = '<html><head><link rel="manifest" href="/manifest.json"></head><body><p>PWA app</p></body></html>'
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    names = {d.name for d in result.detections}
+    assert "Web App Manifest" in names
+
+
+@pytest.mark.asyncio
+async def test_detects_open_graph():
+    html = """
+    <html><head>
+    <meta property="og:title" content="My Site">
+    <meta property="og:description" content="Desc">
+    <meta property="og:image" content="https://example.com/img.png">
+    </head><body><p>Content</p></body></html>
+    """
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    names = {d.name for d in result.detections}
+    assert "Open Graph" in names
+
+
+@pytest.mark.asyncio
+async def test_detects_twitter_cards():
+    html = """
+    <html><head>
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:site" content="@example">
+    </head><body><p>Content</p></body></html>
+    """
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    names = {d.name for d in result.detections}
+    assert "Twitter Cards" in names
+
+
+@pytest.mark.asyncio
+async def test_counts_script_tags():
+    html = """
+    <html><body>
+    <script src="https://cdn.example.com/app.js"></script>
+    <script src="https://analytics.example.com/track.js"></script>
+    <script>console.log("inline")</script>
+    <p>Content</p>
+    </body></html>
+    """
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    script_det = [d for d in result.detections if d.name == "Script tags"]
+    assert len(script_det) == 1
+    assert "3 total" in script_det[0].evidence
+    assert "2 external domains" in script_det[0].evidence
+
+
+@pytest.mark.asyncio
+async def test_detects_hotjar():
+    html = '<html><body><script src="https://static.hotjar.com/c/hotjar-123.js"></script><p>Content</p></body></html>'
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    names = {d.name for d in result.detections}
+    assert "Hotjar" in names
+
+
+@pytest.mark.asyncio
+async def test_detects_alpine_js():
+    html = '<html><body><div x-data="{ open: false }"><button @click="open = !open">Toggle</button></div></body></html>'
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    names = {d.name for d in result.detections}
+    assert "Alpine.js" in names
+
+
+# ── New tests for deep analysis expansion ─────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_detects_paypal():
+    html = '<html><body><script src="https://www.paypal.com/sdk/js?client-id=abc"></script></body></html>'
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    names = {d.name for d in result.detections}
+    assert "PayPal" in names
+
+
+@pytest.mark.asyncio
+async def test_detects_auth0():
+    html = '<html><body><script src="https://cdn.auth0.com/js/auth0-spa-js/1.0/auth0-spa-js.production.js"></script></body></html>'
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    names = {d.name for d in result.detections}
+    assert "Auth0" in names
+
+
+@pytest.mark.asyncio
+async def test_detects_google_maps():
+    html = '<html><body><script src="https://maps.googleapis.com/maps/api/js?key=abc"></script></body></html>'
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    names = {d.name for d in result.detections}
+    assert "Google Maps" in names
+
+
+@pytest.mark.asyncio
+async def test_detects_youtube_embed():
+    html = '<html><body><iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ"></iframe></body></html>'
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    names = {d.name for d in result.detections}
+    assert "YouTube" in names
+
+
+@pytest.mark.asyncio
+async def test_detects_google_fonts():
+    html = '<html><head><link href="https://fonts.googleapis.com/css2?family=Roboto" rel="stylesheet"></head><body></body></html>'
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    names = {d.name for d in result.detections}
+    assert "Google Fonts" in names
+
+
+@pytest.mark.asyncio
+async def test_detects_shopify():
+    html = '<html><body><script src="https://cdn.shopify.com/s/files/1/theme.js"></script></body></html>'
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    names = {d.name for d in result.detections}
+    assert "Shopify" in names
+
+
+@pytest.mark.asyncio
+async def test_detects_new_relic():
+    html = '<html><body><script>window.NREUM||(NREUM={})</script></body></html>'
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    names = {d.name for d in result.detections}
+    assert "New Relic" in names
+
+
+@pytest.mark.asyncio
+async def test_detects_cookiebot():
+    html = '<html><body><script src="https://consent.cookiebot.com/uc.js"></script></body></html>'
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    names = {d.name for d in result.detections}
+    assert "CookieBot" in names
+
+
+@pytest.mark.asyncio
+async def test_extracts_cdn_script_dependencies():
+    html = """
+    <html><body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+    </body></html>
+    """
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    deps_by_name = {d.name: d for d in result.script_dependencies}
+    assert "lodash.js" in deps_by_name
+    assert deps_by_name["lodash.js"].version == "4.17.21"
+    assert deps_by_name["lodash.js"].cdn == "cdnjs"
+    assert "axios" in deps_by_name
+    assert deps_by_name["axios"].version == "1.6.0"
+    assert deps_by_name["axios"].cdn == "jsdelivr"
+    assert "react" in deps_by_name
+    assert deps_by_name["react"].version == "18.2.0"
+    assert deps_by_name["react"].cdn == "unpkg"
+
+
+@pytest.mark.asyncio
+async def test_extracts_json_ld_structured_data():
+    html = """
+    <html><head>
+    <script type="application/ld+json">{"@type": "Organization", "name": "Example"}</script>
+    <script type="application/ld+json">{"@type": "WebSite", "url": "https://example.com"}</script>
+    </head><body></body></html>
+    """
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    assert "Organization" in result.structured_data_types
+    assert "WebSite" in result.structured_data_types
+
+
+@pytest.mark.asyncio
+async def test_extracts_preconnect_domains():
+    html = """
+    <html><head>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="dns-prefetch" href="https://cdn.example.com">
+    <link rel="preconnect" href="https://api.example.com">
+    </head><body></body></html>
+    """
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    assert "fonts.googleapis.com" in result.preconnect_domains
+    assert "cdn.example.com" in result.preconnect_domains
+    assert "api.example.com" in result.preconnect_domains
+
+
+@pytest.mark.asyncio
+async def test_detects_cloudinary():
+    html = '<html><body><img src="https://res.cloudinary.com/demo/image/upload/sample.jpg"></body></html>'
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    names = {d.name for d in result.detections}
+    assert "Cloudinary" in names
+
+
+@pytest.mark.asyncio
+async def test_detects_socket_io():
+    html = '<html><body><script src="/socket.io/socket.io.js"></script></body></html>'
+    resp = HttpResponse(status_code=200, headers={}, text=html, url="https://example.com")
+    analyser = FrontendAnalyser(FakeHttpClient(resp))
+    result = await analyser.analyse(AnalysisTarget.from_url("https://example.com"))
+
+    names = {d.name for d in result.detections}
+    assert "Socket.io" in names

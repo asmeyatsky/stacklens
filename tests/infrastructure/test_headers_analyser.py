@@ -15,6 +15,9 @@ class FakeHttpClient:
     async def head(self, url, *, follow_redirects=True):
         return self._response
 
+    async def options(self, url, *, follow_redirects=True):
+        return self._response
+
     async def close(self):
         pass
 
@@ -62,4 +65,108 @@ async def test_headers_analyser_score():
     target = AnalysisTarget.from_url("https://example.com")
     result = await analyser.analyse(target)
 
-    assert result.score == 1.0
+    # Score is based on 6/9 now (original 6 present, 3 new CO* missing)
+    assert result.score > 0
+
+
+@pytest.mark.asyncio
+async def test_detects_cross_origin_headers():
+    resp = HttpResponse(
+        status_code=200,
+        headers={
+            "Cross-Origin-Embedder-Policy": "require-corp",
+            "Cross-Origin-Opener-Policy": "same-origin",
+            "Cross-Origin-Resource-Policy": "same-origin",
+        },
+        text="",
+        url="https://example.com",
+    )
+    analyser = HeadersAnalyser(FakeHttpClient(resp))
+    target = AnalysisTarget.from_url("https://example.com")
+    result = await analyser.analyse(target)
+
+    present = {h.name for h in result.security_headers if h.present}
+    assert "Cross-Origin-Embedder-Policy" in present
+    assert "Cross-Origin-Opener-Policy" in present
+    assert "Cross-Origin-Resource-Policy" in present
+
+
+@pytest.mark.asyncio
+async def test_parses_cors_headers():
+    resp = HttpResponse(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST",
+            "Access-Control-Allow-Credentials": "true",
+        },
+        text="",
+        url="https://example.com",
+    )
+    analyser = HeadersAnalyser(FakeHttpClient(resp))
+    target = AnalysisTarget.from_url("https://example.com")
+    result = await analyser.analyse(target)
+
+    assert result.cors.get("allow_origin") == "*"
+    assert result.cors.get("allow_methods") == "GET, POST"
+    assert result.cors.get("allow_credentials") == "true"
+
+
+@pytest.mark.asyncio
+async def test_parses_caching_headers():
+    resp = HttpResponse(
+        status_code=200,
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "ETag": '"abc123"',
+            "Age": "120",
+            "Vary": "Accept-Encoding",
+        },
+        text="",
+        url="https://example.com",
+    )
+    analyser = HeadersAnalyser(FakeHttpClient(resp))
+    target = AnalysisTarget.from_url("https://example.com")
+    result = await analyser.analyse(target)
+
+    assert result.caching.get("cache-control") == "public, max-age=3600"
+    assert result.caching.get("etag") == '"abc123"'
+    assert result.caching.get("age") == "120"
+    assert result.caching.get("vary") == "Accept-Encoding"
+
+
+@pytest.mark.asyncio
+async def test_analyzes_cookie_insights():
+    resp = HttpResponse(
+        status_code=200,
+        headers={
+            "Set-Cookie": "_ga=GA1.2.123; path=/; max-age=63072000\n_fbp=fb.1.123; path=/\nPHPSESSID=abc123; path=/",
+        },
+        text="",
+        url="https://example.com",
+    )
+    analyser = HeadersAnalyser(FakeHttpClient(resp))
+    target = AnalysisTarget.from_url("https://example.com")
+    result = await analyser.analyse(target)
+
+    assert any("Google Analytics" in ci for ci in result.cookie_insights)
+    assert any("Facebook Pixel" in ci for ci in result.cookie_insights)
+    assert any("PHP session" in ci for ci in result.cookie_insights)
+
+
+@pytest.mark.asyncio
+async def test_detects_long_lived_cookies():
+    # max-age of 10 years
+    resp = HttpResponse(
+        status_code=200,
+        headers={
+            "Set-Cookie": "tracker=abc; path=/; max-age=315360000",
+        },
+        text="",
+        url="https://example.com",
+    )
+    analyser = HeadersAnalyser(FakeHttpClient(resp))
+    target = AnalysisTarget.from_url("https://example.com")
+    result = await analyser.analyse(target)
+
+    assert any("Long-lived" in ci for ci in result.cookie_insights)

@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from stacklens.domain.models.meta import ScanMeta
+from stacklens.domain.models.summary import ScanSummary
 from stacklens.domain.models.target import AnalysisTarget
 
 
@@ -14,10 +15,14 @@ class AnalysisReport(BaseModel, frozen=True):
     target: AnalysisTarget
     meta: ScanMeta = Field(default_factory=ScanMeta)
     layers: dict[str, Any] = Field(default_factory=dict)
+    summary: ScanSummary | None = None
 
     def with_layer_result(self, layer_name: str, result: Any) -> AnalysisReport:
         new_layers = {**self.layers, layer_name: result}
         return self.model_copy(update={"layers": new_layers})
+
+    def with_summary(self, summary: ScanSummary) -> AnalysisReport:
+        return self.model_copy(update={"summary": summary})
 
     def finalize(self) -> AnalysisReport:
         completed_meta = self.meta.complete(list(self.layers.keys()))
