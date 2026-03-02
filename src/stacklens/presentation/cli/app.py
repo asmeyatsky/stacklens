@@ -11,6 +11,7 @@ def _register_commands() -> None:
     """Import command modules so they register on ``app``."""
     import stacklens.presentation.cli.commands.analyze  # noqa: F401
     import stacklens.presentation.cli.commands.report  # noqa: F401
+    import stacklens.presentation.cli.commands.web  # noqa: F401
 
 
 _register_commands()

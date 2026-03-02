@@ -11,6 +11,7 @@ from stacklens.domain.models.target import AnalysisTarget
 from stacklens.domain.ports.report_writer import ReportWriterPort
 from stacklens.domain.services.ethics import EthicsPolicy
 from stacklens.domain.services.performance_scoring import score_performance
+from stacklens.domain.services.recommendation_builder import build_recommendations
 
 
 class RunAnalysisCommand:
@@ -45,6 +46,10 @@ class RunAnalysisCommand:
         if isinstance(browser_data, BrowserResult):
             perf_score = score_performance(browser_data)
             report = report.with_performance_score(perf_score)
+
+        # Build recommendations from all available data
+        recs = build_recommendations(report)
+        report = report.with_recommendations(recs)
 
         config.output_dir.mkdir(parents=True, exist_ok=True)
         for fmt in config.output_formats:

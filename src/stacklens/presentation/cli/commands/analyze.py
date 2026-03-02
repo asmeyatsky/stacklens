@@ -88,6 +88,9 @@ async def _run(config: AnalysisConfig) -> None:
         if report.performance_score:
             _print_performance(report.performance_score)
 
+        if report.recommendations and report.recommendations.items:
+            _print_recommendations(report.recommendations)
+
         console.print(
             f"\n[green]Report saved to {config.output_dir}/[/green]"
         )
@@ -128,6 +131,15 @@ def _print_summary(report) -> None:  # noqa: ANN001
             summary_lines.append(
                 f"[bold]Performance:[/bold] [{gc}]{ps.overall_score}/100 ({ps.grade})[/{gc}]"
             )
+        if report.recommendations and report.recommendations.items:
+            counts: dict[str, int] = {}
+            for rec in report.recommendations.items:
+                counts[rec.severity] = counts.get(rec.severity, 0) + 1
+            parts = []
+            for sev in ("critical", "warning", "info"):
+                if sev in counts:
+                    parts.append(f"{counts[sev]} {sev}")
+            summary_lines.append(f"[bold]Recommendations:[/bold] {', '.join(parts)}")
         if report.summary.key_findings:
             summary_lines.append("")
             for finding in report.summary.key_findings:
@@ -212,6 +224,27 @@ def _print_performance(score) -> None:  # noqa: ANN001
         stats.append(f"Render-blocking: {score.render_blocking_count}")
     if stats:
         console.print(f"  {' · '.join(stats)}")
+
+
+def _print_recommendations(recs: object) -> None:  # noqa: ANN001
+    table = Table(title="RECOMMENDATIONS", show_header=True)
+    table.add_column("Severity", width=10)
+    table.add_column("Category", width=16)
+    table.add_column("Title")
+    table.add_column("Action")
+
+    severity_colors = {"critical": "red", "warning": "yellow", "info": "cyan"}
+
+    for rec in recs.items:
+        color = severity_colors.get(rec.severity, "white")
+        table.add_row(
+            f"[{color}]{rec.severity}[/{color}]",
+            rec.category,
+            rec.title,
+            rec.action,
+        )
+
+    console.print(table)
 
 
 def _print_dns(result) -> None:  # noqa: ANN001

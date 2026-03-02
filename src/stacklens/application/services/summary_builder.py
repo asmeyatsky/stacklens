@@ -197,6 +197,10 @@ def _resolve_key_findings(report: AnalysisReport) -> list[str]:
             findings.append(f"High CLS: {perf.cls:.3f} (>0.25)")
         if browser_result.console.error_count > 0:
             findings.append(f"Console errors: {browser_result.console.error_count}")
+        if browser_result.console.noise_error_count > 0:
+            findings.append(
+                f"Filtered {browser_result.console.noise_error_count} third-party tracking error(s)"
+            )
         gql = browser_result.network.graphql_queries
         if gql:
             findings.append(f"GraphQL: {len(gql)} operation(s) detected at runtime")

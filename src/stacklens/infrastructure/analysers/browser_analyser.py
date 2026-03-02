@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from typing import Any
 from urllib.parse import urlparse
@@ -21,6 +22,51 @@ from stacklens.domain.models.target import AnalysisTarget
 
 _MAX_REQUESTS = 500
 _MAX_ERRORS = 20
+
+# Patterns for third-party tracking/analytics errors that are noise, not real issues.
+_NOISE_PATTERNS = re.compile(
+    "|".join(
+        [
+            r"net::ERR_FAILED",
+            r"net::ERR_BLOCKED_BY_CLIENT",
+            r"net::ERR_CONNECTION_REFUSED",
+            r"Failed to load resource",
+            r"Access to (?:fetch|XMLHttpRequest) at .+ from origin .+ has been blocked by CORS",
+            r"tracking error",
+            r"analytics.*(?:error|fail)",
+        ]
+    ),
+    re.IGNORECASE,
+)
+
+# Domains whose errors are almost always third-party tracking noise.
+_NOISE_DOMAINS = {
+    "google-analytics.com",
+    "googletagmanager.com",
+    "facebook.net",
+    "doubleclick.net",
+    "hotjar.com",
+    "mixpanel.com",
+    "segment.io",
+    "segment.com",
+    "sentry.io",
+    "clarity.ms",
+    "newrelic.com",
+    "nr-data.net",
+    "fullstory.com",
+}
+
+
+def _is_noise_error(text: str) -> bool:
+    """Return True if a console error looks like third-party tracking noise."""
+    # Check if the error mentions a known analytics/tracking domain.
+    for domain in _NOISE_DOMAINS:
+        if domain in text:
+            return True
+    # Check if the error matches common noise patterns AND references a cross-origin URL.
+    if _NOISE_PATTERNS.search(text) and ("http://" in text or "https://" in text):
+        return True
+    return False
 
 
 class BrowserAnalyser:
@@ -99,6 +145,7 @@ class BrowserAnalyser:
                 warning_count=collectors.warning_count,
                 errors=collectors.errors[:_MAX_ERRORS],
                 uncaught_exceptions=collectors.uncaught_exceptions[:_MAX_ERRORS],
+                noise_error_count=collectors.noise_error_count,
             )
 
             websockets = [
@@ -174,9 +221,13 @@ class BrowserAnalyser:
 
         def on_console(msg: Any) -> None:
             if msg.type == "error":
-                collectors.error_count += 1
-                if len(collectors.errors) < _MAX_ERRORS:
-                    collectors.errors.append(msg.text)
+                text = msg.text
+                if _is_noise_error(text):
+                    collectors.noise_error_count += 1
+                else:
+                    collectors.error_count += 1
+                    if len(collectors.errors) < _MAX_ERRORS:
+                        collectors.errors.append(text)
             elif msg.type == "warning":
                 collectors.warning_count += 1
 
@@ -507,3 +558,4 @@ class _Collectors:
         self.warning_count: int = 0
         self.errors: list[str] = []
         self.uncaught_exceptions: list[str] = []
+        self.noise_error_count: int = 0

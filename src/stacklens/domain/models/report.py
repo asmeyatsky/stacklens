@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from stacklens.domain.models.meta import ScanMeta
 from stacklens.domain.models.performance import PerformanceScore
+from stacklens.domain.models.recommendations import Recommendations
 from stacklens.domain.models.summary import ScanSummary
 from stacklens.domain.models.target import AnalysisTarget
 
@@ -18,6 +19,7 @@ class AnalysisReport(BaseModel, frozen=True):
     layers: dict[str, Any] = Field(default_factory=dict)
     summary: ScanSummary | None = None
     performance_score: PerformanceScore | None = None
+    recommendations: Recommendations | None = None
 
     def with_layer_result(self, layer_name: str, result: Any) -> AnalysisReport:
         new_layers = {**self.layers, layer_name: result}
@@ -28,6 +30,9 @@ class AnalysisReport(BaseModel, frozen=True):
 
     def with_performance_score(self, score: PerformanceScore) -> AnalysisReport:
         return self.model_copy(update={"performance_score": score})
+
+    def with_recommendations(self, recs: Recommendations) -> AnalysisReport:
+        return self.model_copy(update={"recommendations": recs})
 
     def finalize(self) -> AnalysisReport:
         completed_meta = self.meta.complete(list(self.layers.keys()))

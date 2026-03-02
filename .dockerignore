@@ -1,0 +1,9 @@
+.venv/
+.git/
+.claude/
+__pycache__/
+*.pyc
+tests/
+stacklens_output/
+.gitignore
+uv.lock

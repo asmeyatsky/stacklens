@@ -85,6 +85,7 @@ class ConsoleSnapshot(BaseModel, frozen=True):
     warning_count: int = 0
     errors: list[str] = []
     uncaught_exceptions: list[str] = []
+    noise_error_count: int = 0
 
 
 class DomSnapshot(BaseModel, frozen=True):

@@ -92,6 +92,20 @@ td{padding:.4rem .5rem;border-bottom:1px solid #161b22;font-size:.9rem}
 .bar-row .bar-fill{height:100%;background:#58a6ff;border-radius:3px}
 .bar-row .bar-size{width:70px;text-align:right;color:#c9d1d9}
 .perf-badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.75rem;font-weight:600}
+.rec-grid{display:flex;flex-direction:column;gap:.75rem;margin-top:.75rem}
+.rec-item{background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:1rem;border-left:4px solid #8b949e}
+.rec-item.rec-critical{border-left-color:#f87171}
+.rec-item.rec-warning{border-left-color:#f59e0b}
+.rec-item.rec-info{border-left-color:#2dd4bf}
+.rec-severity{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.7rem;font-weight:600;text-transform:uppercase;margin-right:.5rem}
+.rec-severity-critical{background:#4c1d1d;color:#f87171}
+.rec-severity-warning{background:#4a3728;color:#f59e0b}
+.rec-severity-info{background:#1b4332;color:#2dd4bf}
+.rec-category{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.7rem;font-weight:500;background:#21262d;color:#8b949e;margin-right:.5rem}
+.rec-title{font-weight:600;color:#f0f6fc;margin-bottom:.25rem}
+.rec-desc{color:#8b949e;font-size:.85rem;margin-bottom:.25rem}
+.rec-impact{color:#8b949e;font-size:.85rem;font-style:italic;margin-bottom:.5rem}
+.rec-action{background:#161b22;border:1px solid #21262d;border-radius:4px;padding:.5rem .75rem;font-size:.85rem;color:#c9d1d9}
 """
 
 
@@ -111,6 +125,9 @@ class HtmlReportWriter:
 
         if report.performance_score:
             parts.append(self._performance_section(report.performance_score))
+
+        if report.recommendations and report.recommendations.items:
+            parts.append(self._recommendations_section(report.recommendations))
 
         layers = report.layers
         section_map = {
@@ -282,6 +299,31 @@ class HtmlReportWriter:
         return (
             f'<div class="card"><h2>Performance</h2>'
             f'{circle_svg}{metric_grid}{breakdown_html}{stats_html}</div>'
+        )
+
+    # ── Recommendations ──────────────────────────────────────────
+
+    def _recommendations_section(self, recs: object) -> str:
+        items_html = ""
+        for rec in recs.items:
+            sev_cls = f"rec-{rec.severity}"
+            badge_cls = f"rec-severity-{rec.severity}"
+            items_html += (
+                f'<div class="rec-item {sev_cls}">'
+                f'<div style="margin-bottom:.5rem">'
+                f'<span class="rec-severity {badge_cls}">{_esc(rec.severity)}</span>'
+                f'<span class="rec-category">{_esc(rec.category)}</span>'
+                f'</div>'
+                f'<div class="rec-title">{_esc(rec.title)}</div>'
+                f'<div class="rec-desc">{_esc(rec.description)}</div>'
+                f'<div class="rec-impact">{_esc(rec.impact)}</div>'
+                f'<div class="rec-action">{_esc(rec.action)}</div>'
+                f'</div>'
+            )
+
+        return (
+            f'<div class="card"><h2>Recommendations</h2>'
+            f'<div class="rec-grid">{items_html}</div></div>'
         )
 
     # ── DNS ─────────────────────────────────────────────────────
@@ -568,6 +610,9 @@ class HtmlReportWriter:
             ]
             if con.uncaught_exceptions:
                 crows.append(("Uncaught Exceptions", str(len(con.uncaught_exceptions))))
+            noise = getattr(con, "noise_error_count", 0)
+            if noise:
+                crows.append(("Filtered tracking noise", str(noise)))
             err_html = ""
             for err in con.errors[:5]:
                 err_html += f"<div class=\"finding\" style=\"color:#f87171\">• {_esc(err[:120])}</div>"

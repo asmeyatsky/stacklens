@@ -11,6 +11,7 @@ from rich.console import Console
 from stacklens.domain.models.browser import BrowserResult
 from stacklens.domain.models.report import AnalysisReport
 from stacklens.domain.services.performance_scoring import score_performance
+from stacklens.domain.services.recommendation_builder import build_recommendations
 from stacklens.infrastructure.writers.html_writer import HtmlReportWriter
 from stacklens.presentation.cli.app import app
 
@@ -45,6 +46,11 @@ def report(
                 analysis_report = analysis_report.with_performance_score(perf_score)
             except Exception:
                 pass
+
+    # Build recommendations if not already present
+    if analysis_report.recommendations is None:
+        recs = build_recommendations(analysis_report)
+        analysis_report = analysis_report.with_recommendations(recs)
 
     html_path = output or json_path.with_suffix(".html")
     asyncio.run(_write_html(analysis_report, html_path))
